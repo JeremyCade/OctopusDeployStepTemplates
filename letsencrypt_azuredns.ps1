@@ -16,9 +16,9 @@ Import-Module Posh-ACME
 ###############################################################################
 # Constants
 ###############################################################################
-$Certificate_Name = "Lets Encrypt - $($OctopusParameters["LE_CertificateDomain"])"
-$LE_Fake_Issuer = "Fake LE Intermediate X1"
-$LE_Issuer = "Let's Encrypt Authority X3"
+$LE_AzureDNS_Certificate_Name = "Lets Encrypt - $($OctopusParameters["LE_AzureDNS_CertificateDomain"])"
+$LE_AzureDNS_Fake_Issuer = "Fake LE Intermediate X1"
+$LE_AzureDNS_Issuer = "Let's Encrypt Authority X3"
 
 ###############################################################################
 # Helpers
@@ -50,7 +50,7 @@ function Get-WebRequestErrorBody {
 function Get-LetsEncryptCertificate {
     Write-Debug "Entering: Get-LetsEncryptCertificate"
 
-    if ($OctopusParameters["LE_Use_Staging"]) {
+    if ($OctopusParameters["LE_AzureDNS_Use_Staging"]) {
         Write-Host "Using Lets Encrypt Server: Staging"
         Set-PAServer LE_STAGE;
     }
@@ -65,16 +65,16 @@ function Get-LetsEncryptCertificate {
         Remove-PAAccount $le_account.Id -Force
     }
 
-    $azure_password = ConvertTo-SecureString -String $OctopusParameters["LE_AzureAccount.Password"] -AsPlainText -Force
-    $azure_credential = New-Object System.Management.Automation.PSCredential($OctopusParameters["LE_AzureAccount.Client"], $azure_password)
+    $azure_password = ConvertTo-SecureString -String $OctopusParameters["LE_AzureDNS_AzureAccount.Password"] -AsPlainText -Force
+    $azure_credential = New-Object System.Management.Automation.PSCredential($OctopusParameters["LE_AzureDNS_AzureAccount.Client"], $azure_password)
     $azure_params = @{
-        AZSubscriptionId = $OctopusParameters["LE_AzureAccount.SubscriptionNumber"];
-        AZTenantId       = $OctopusParameters["LE_AzureAccount.TenantId"];
+        AZSubscriptionId = $OctopusParameters["LE_AzureDNS_AzureAccount.SubscriptionNumber"];
+        AZTenantId       = $OctopusParameters["LE_AzureDNS_AzureAccount.TenantId"];
         AZAppCred        = $azure_credential
     }
 
     try {
-        return New-PACertificate -Domain $OctopusParameters["LE_CertificateDomain"] -AcceptTOS -Contact $OctopusParameters["LE_ContactEmailAddress"] -DnsPlugin Azure -PluginArgs $azure_params -PfxPass $OctopusParameters["LE_PfxPassword"] -Force
+        return New-PACertificate -Domain $OctopusParameters["LE_AzureDNS_CertificateDomain"] -AcceptTOS -Contact $OctopusParameters["LE_AzureDNS_ContactEmailAddress"] -DnsPlugin Azure -PluginArgs $azure_params -PfxPass $OctopusParameters["LE_AzureDNS_PfxPassword"] -Force
     }
     catch {
         Write-Host "Failed to Create Certificate. Error Message: $($_.Exception.Message). See Debug output for details."
@@ -88,21 +88,21 @@ function Get-OctopusCertificates {
 
     $octopus_uri = $OctopusParameters["Octopus.Web.ServerUri"]
     $octopus_space_id = $OctopusParameters["Octopus.Space.Id"]
-    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Octopus_APIKey"] }
-    $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates?search=$($OctopusParameters["LE_CertificateDomain"])"
+    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_AzureDNS_Octopus_APIKey"] }
+    $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates?search=$($OctopusParameters["LE_AzureDNS_CertificateDomain"])"
 
     try {
         # Get a list of certificates that match our domain search criteria.
         $certificates_search = Invoke-WebRequest -Uri $octopus_certificates_uri -Method Get -Headers $octopus_headers -UseBasicParsing -ErrorAction Stop | ConvertFrom-Json | Select-Object -ExpandProperty Items
 
         # We don't want to confuse Production and Staging Lets Encrypt Certificates.
-        $issuer = $LE_Issuer
-        if ($OctopusParameters["LE_Use_Staging"]) {
-            $issuer = $LE_Fake_Issuer
+        $issuer = $LE_AzureDNS_Issuer
+        if ($OctopusParameters["LE_AzureDNS_Use_Staging"]) {
+            $issuer = $LE_AzureDNS_Fake_Issuer
         }
 
         return $certificates_search | Where-Object {
-            $_.SubjectCommonName -eq $OctopusParameters["LE_CertificateDomain"] -and
+            $_.SubjectCommonName -eq $OctopusParameters["LE_AzureDNS_CertificateDomain"] -and
             $_.IssuerCommonName -eq $issuer -and
             $null -eq $_.ReplacedBy -and
             $null -eq $_.Archived
@@ -129,15 +129,15 @@ function Publish-OctopusCertificate {
 
     $octopus_uri = $OctopusParameters["Octopus.Web.ServerUri"]
     $octopus_space_id = $OctopusParameters["Octopus.Space.Id"]
-    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Octopus_APIKey"] }
+    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_AzureDNS_Octopus_APIKey"] }
     $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates"
 
     try {
         Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing
-        Write-Host "Published $($OctopusParameters["LE_CertificateDomain"]) certificate to the Octopus Deploy Certificate Store."
+        Write-Host "Published $($OctopusParameters["LE_AzureDNS_CertificateDomain"]) certificate to the Octopus Deploy Certificate Store."
     }
     catch {
-        Write-Host "Failed to publish $($OctopusParameters["LE_CertificateDomain"]) certificate. Error: $($_.Exception.Message). See Debug output for details."
+        Write-Host "Failed to publish $($OctopusParameters["LE_AzureDNS_CertificateDomain"]) certificate. Error: $($_.Exception.Message). See Debug output for details."
         Write-Debug (Get-WebRequestErrorBody -RequestError $_)
         exit 1
     }
@@ -158,15 +158,15 @@ function Update-OctopusCertificate {
 
     $octopus_uri = $OctopusParameters["Octopus.Web.ServerUri"]
     $octopus_space_id = $OctopusParameters["Octopus.Space.Id"]
-    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Octopus_APIKey"] }
+    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_AzureDNS_Octopus_APIKey"] }
     $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates/$Certificate_Id/replace"
 
     try {
         Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing
-        Write-Host "Replaced $($OctopusParameters["LE_CertificateDomain"]) certificate in the Octopus Deploy Certificate Store."
+        Write-Host "Replaced $($OctopusParameters["LE_AzureDNS_CertificateDomain"]) certificate in the Octopus Deploy Certificate Store."
     }
     catch {
-        Write-Error "Failed to replace $($OctopusParameters["LE_CertificateDomain"]) certificate. Error: $($_.Exception.Message)"
+        Write-Error "Failed to replace $($OctopusParameters["LE_AzureDNS_CertificateDomain"]) certificate. Error: $($_.Exception.Message)"
         exit 1
     }
 }
@@ -187,7 +187,7 @@ function Get-NewCertificatePFXAsJson {
     $certificate_base64 = [convert]::ToBase64String($certificate_buffer)
 
     $certificate_body = @{
-        Name = "$Certificate_Name";
+        Name = "$LE_AzureDNS_Certificate_Name";
         Notes             = "";
         CertificateData   = @{
             HasValue = $true;
@@ -195,7 +195,7 @@ function Get-NewCertificatePFXAsJson {
         };
         Password          = @{
             HasValue = $true;
-            NewValue = $OctopusParameters["LE_PfxPassword"];
+            NewValue = $OctopusParameters["LE_AzureDNS_PfxPassword"];
         };
     }
 
@@ -219,7 +219,7 @@ function Get-ReplaceCertificatePFXAsJson {
 
     $certificate_body = @{
         CertificateData = $certificate_base64;
-        Password        = $OctopusParameters["LE_PfxPassword"];
+        Password        = $OctopusParameters["LE_AzureDNS_PfxPassword"];
     }
 
     return $certificate_body | ConvertTo-Json
@@ -242,14 +242,14 @@ if ($certificates) {
         $certificate_count = $certificates.Count
     }
 
-    Write-Host "Found $certificate_count for $($OctopusParameters["LE_CertificateDomain"])."
-    Write-Host "Checking to see if any expire within $($OctopusParameters["LE_ReplaceIfExpiresInDays"]) days."
+    Write-Host "Found $certificate_count for $($OctopusParameters["LE_AzureDNS_CertificateDomain"])."
+    Write-Host "Checking to see if any expire within $($OctopusParameters["LE_AzureDNS_ReplaceIfExpiresInDays"]) days."
 
     # Check Expiry Dates
-    $expiring_certificates = $certificates | Where-Object { [DateTime]$_.NotAfter -lt (Get-Date).AddDays($OctopusParameters["LE_ReplaceIfExpiresInDays"]) }
+    $expiring_certificates = $certificates | Where-Object { [DateTime]$_.NotAfter -lt (Get-Date).AddDays($OctopusParameters["LE_AzureDNS_ReplaceIfExpiresInDays"]) }
 
     if ($expiring_certificates) {
-        Write-Host "Found certificates that expire with $($OctopusParameters["LE_ReplaceIfExpiresInDays"]) days. Requesting new certificates for $($OctopusParameters["LE_CertificateDomain"]) from Lets Encrypt"
+        Write-Host "Found certificates that expire with $($OctopusParameters["LE_AzureDNS_ReplaceIfExpiresInDays"]) days. Requesting new certificates for $($OctopusParameters["LE_AzureDNS_CertificateDomain"]) from Lets Encrypt"
         $le_certificate = Get-LetsEncryptCertificate
 
         # PFX
@@ -265,13 +265,13 @@ if ($certificates) {
 }
 
 # No existing Certificates - Lets get some new ones.
-Write-Host "No existing certificates found for $($OctopusParameters["LE_CertificateDomain"])."
-Write-Host "Request New Certificate for $($OctopusParameters["LE_CertificateDomain"]) from Lets Encrypt"
+Write-Host "No existing certificates found for $($OctopusParameters["LE_AzureDNS_CertificateDomain"])."
+Write-Host "Request New Certificate for $($OctopusParameters["LE_AzureDNS_CertificateDomain"]) from Lets Encrypt"
 
 # New Certificate..
 $le_certificate = Get-LetsEncryptCertificate
 
-Write-Host "Publishing: LetsEncrypt - $($OctopusParameters["LE_CertificateDomain"]) (PFX)"
+Write-Host "Publishing: LetsEncrypt - $($OctopusParameters["LE_AzureDNS_CertificateDomain"]) (PFX)"
 $certificate_as_json = Get-NewCertificatePFXAsJson -Certificate $le_certificate
 Publish-OctopusCertificate -JsonBody $certificate_as_json
 

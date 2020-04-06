@@ -16,9 +16,9 @@ Import-Module Posh-ACME
 ###############################################################################
 # Constants
 ###############################################################################
-$Certificate_Name = "Lets Encrypt - $($OctopusParameters["LE_CertificateDomain"])"
-$LE_Fake_Issuer = "Fake LE Intermediate X1"
-$LE_Issuer = "Let's Encrypt Authority X3"
+$LE_Route53_Certificate_Name = "Lets Encrypt - $($OctopusParameters["LE_Route53_CertificateDomain"])"
+$LE_Route53_Fake_Issuer = "Fake LE Intermediate X1"
+$LE_Route53_Issuer = "Let's Encrypt Authority X3"
 
 ###############################################################################
 # Helpers
@@ -50,7 +50,7 @@ function Get-WebRequestErrorBody {
 function Get-LetsEncryptCertificate {
     Write-Debug "Entering: Get-LetsEncryptCertificate"
 
-    if ($OctopusParameters["LE_Use_Staging"]) {
+    if ($OctopusParameters["LE_Route53_Use_Staging"]) {
         Write-Host "Using Lets Encrypt Server: Staging"
         Set-PAServer LE_STAGE;
     }
@@ -65,14 +65,14 @@ function Get-LetsEncryptCertificate {
         Remove-PAAccount $le_account.Id -Force
     }
 
-    $aws_secret_key = ConvertTo-SecureString -String $OctopusParameters["LE_AWSAccount.SecretKey"] -AsPlainText -Force
+    $aws_secret_key = ConvertTo-SecureString -String $OctopusParameters["LE_Route53_AWSAccount.SecretKey"] -AsPlainText -Force
     $route53_params = @{
-        R53AccessKey = $OctopusParameters["LE_AWSAccount.AccessKey"];
+        R53AccessKey = $OctopusParameters["LE_Route53_AWSAccount.AccessKey"];
         R53SecretKey = $aws_secret_key
     }
 
     try {
-        return New-PACertificate -Domain $OctopusParameters["LE_CertificateDomain"] -AcceptTOS -Contact $OctopusParameters["LE_ContactEmailAddress"] -DnsPlugin Route53 -PluginArgs $route53_params -PfxPass $OctopusParameters["LE_PfxPassword"] -Force
+        return New-PACertificate -Domain $OctopusParameters["LE_Route53_CertificateDomain"] -AcceptTOS -Contact $OctopusParameters["LE_Route53_ContactEmailAddress"] -DnsPlugin Route53 -PluginArgs $route53_params -PfxPass $OctopusParameters["LE_Route53_PfxPassword"] -Force
     }
     catch {
         Write-Host "Failed to Create Certificate. Error Message: $($_.Exception.Message). See Debug output for details."
@@ -86,21 +86,21 @@ function Get-OctopusCertificates {
 
     $octopus_uri = $OctopusParameters["Octopus.Web.ServerUri"]
     $octopus_space_id = $OctopusParameters["Octopus.Space.Id"]
-    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Octopus_APIKey"] }
-    $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates?search=$($OctopusParameters["LE_CertificateDomain"])"
+    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Route53_Octopus_APIKey"] }
+    $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates?search=$($OctopusParameters["LE_Route53_CertificateDomain"])"
 
     try {
         # Get a list of certificates that match our domain search criteria.
         $certificates_search = Invoke-WebRequest -Uri $octopus_certificates_uri -Method Get -Headers $octopus_headers -UseBasicParsing -ErrorAction Stop | ConvertFrom-Json | Select-Object -ExpandProperty Items
 
         # We don't want to confuse Production and Staging Lets Encrypt Certificates.
-        $issuer = $LE_Issuer
-        if ($OctopusParameters["LE_Use_Staging"]) {
-            $issuer = $LE_Fake_Issuer
+        $issuer = $LE_Route53_Issuer
+        if ($OctopusParameters["LE_Route53_Use_Staging"]) {
+            $issuer = $LE_Route53_Fake_Issuer
         }
 
         return $certificates_search | Where-Object {
-            $_.SubjectCommonName -eq $OctopusParameters["LE_CertificateDomain"] -and
+            $_.SubjectCommonName -eq $OctopusParameters["LE_Route53_CertificateDomain"] -and
             $_.IssuerCommonName -eq $issuer -and
             $null -eq $_.ReplacedBy -and
             $null -eq $_.Archived
@@ -127,15 +127,15 @@ function Publish-OctopusCertificate {
 
     $octopus_uri = $OctopusParameters["Octopus.Web.ServerUri"]
     $octopus_space_id = $OctopusParameters["Octopus.Space.Id"]
-    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Octopus_APIKey"] }
+    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Route53_Octopus_APIKey"] }
     $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates"
 
     try {
         Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing
-        Write-Host "Published $($OctopusParameters["LE_CertificateDomain"]) certificate to the Octopus Deploy Certificate Store."
+        Write-Host "Published $($OctopusParameters["LE_Route53_CertificateDomain"]) certificate to the Octopus Deploy Certificate Store."
     }
     catch {
-        Write-Host "Failed to publish $($OctopusParameters["LE_CertificateDomain"]) certificate. Error: $($_.Exception.Message). See Debug output for details."
+        Write-Host "Failed to publish $($OctopusParameters["LE_Route53_CertificateDomain"]) certificate. Error: $($_.Exception.Message). See Debug output for details."
         Write-Debug (Get-WebRequestErrorBody -RequestError $_)
         exit 1
     }
@@ -156,15 +156,15 @@ function Update-OctopusCertificate {
 
     $octopus_uri = $OctopusParameters["Octopus.Web.ServerUri"]
     $octopus_space_id = $OctopusParameters["Octopus.Space.Id"]
-    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Octopus_APIKey"] }
+    $octopus_headers = @{ "X-Octopus-ApiKey" = $OctopusParameters["LE_Route53_Octopus_APIKey"] }
     $octopus_certificates_uri = "$octopus_uri/api/$octopus_space_id/certificates/$Certificate_Id/replace"
 
     try {
         Invoke-WebRequest -Uri $octopus_certificates_uri -Method Post -Headers $octopus_headers -Body $JsonBody -UseBasicParsing
-        Write-Host "Replaced $($OctopusParameters["LE_CertificateDomain"]) certificate in the Octopus Deploy Certificate Store."
+        Write-Host "Replaced $($OctopusParameters["LE_Route53_CertificateDomain"]) certificate in the Octopus Deploy Certificate Store."
     }
     catch {
-        Write-Error "Failed to replace $($OctopusParameters["LE_CertificateDomain"]) certificate. Error: $($_.Exception.Message). See Debug output for details."
+        Write-Error "Failed to replace $($OctopusParameters["LE_Route53_CertificateDomain"]) certificate. Error: $($_.Exception.Message). See Debug output for details."
         Write-Debug (Get-WebRequestErrorBody -RequestError $_)
         exit 1
     }
@@ -186,7 +186,7 @@ function Get-NewCertificatePFXAsJson {
     $certificate_base64 = [convert]::ToBase64String($certificate_buffer)
 
     $certificate_body = @{
-        Name = "$Certificate_Name";
+        Name = "$LE_Route53_Certificate_Name";
         Notes            = "";
         CertificateData  = @{
             HasValue = $true;
@@ -194,7 +194,7 @@ function Get-NewCertificatePFXAsJson {
         };
         Password         = @{
             HasValue = $true;
-            NewValue = $OctopusParameters["LE_PfxPassword"];
+            NewValue = $OctopusParameters["LE_Route53_PfxPassword"];
         };
     }
 
@@ -218,7 +218,7 @@ function Get-ReplaceCertificatePFXAsJson {
 
     $certificate_body = @{
         CertificateData = $certificate_base64;
-        Password        = $OctopusParameters["LE_PfxPassword"];
+        Password        = $OctopusParameters["LE_Route53_PfxPassword"];
     }
 
     return $certificate_body | ConvertTo-Json
@@ -241,14 +241,14 @@ if ($certificates) {
         $certificate_count = $certificates.Count
     }
 
-    Write-Host "Found $certificate_count for $($OctopusParameters["LE_CertificateDomain"])."
-    Write-Host "Checking to see if any expire within $($OctopusParameters["LE_ReplaceIfExpiresInDays"]) days."
+    Write-Host "Found $certificate_count for $($OctopusParameters["LE_Route53_CertificateDomain"])."
+    Write-Host "Checking to see if any expire within $($OctopusParameters["LE_Route53_ReplaceIfExpiresInDays"]) days."
 
     # Check Expiry Dates
-    $expiring_certificates = $certificates | Where-Object { [DateTime]$_.NotAfter -lt (Get-Date).AddDays($OctopusParameters["LE_ReplaceIfExpiresInDays"]) }
+    $expiring_certificates = $certificates | Where-Object { [DateTime]$_.NotAfter -lt (Get-Date).AddDays($OctopusParameters["LE_Route53_ReplaceIfExpiresInDays"]) }
 
     if ($expiring_certificates) {
-        Write-Host "Found certificates that expire with $($OctopusParameters["LE_ReplaceIfExpiresInDays"]) days. Requesting new certificates for $($OctopusParameters["LE_CertificateDomain"]) from Lets Encrypt"
+        Write-Host "Found certificates that expire with $($OctopusParameters["LE_Route53_ReplaceIfExpiresInDays"]) days. Requesting new certificates for $($OctopusParameters["LE_Route53_CertificateDomain"]) from Lets Encrypt"
         $le_certificate = Get-LetsEncryptCertificate
 
         # PFX
@@ -264,13 +264,13 @@ if ($certificates) {
 }
 
 # No existing Certificates - Lets get some new ones.
-Write-Host "No existing certificates found for $($OctopusParameters["LE_CertificateDomain"])."
-Write-Host "Request New Certificate for $($OctopusParameters["LE_CertificateDomain"]) from Lets Encrypt"
+Write-Host "No existing certificates found for $($OctopusParameters["LE_Route53_CertificateDomain"])."
+Write-Host "Request New Certificate for $($OctopusParameters["LE_Route53_CertificateDomain"]) from Lets Encrypt"
 
 # New Certificate..
 $le_certificate = Get-LetsEncryptCertificate
 
-Write-Host "Publishing: LetsEncrypt - $($OctopusParameters["LE_CertificateDomain"]) (PFX)"
+Write-Host "Publishing: LetsEncrypt - $($OctopusParameters["LE_Route53_CertificateDomain"]) (PFX)"
 $certificate_as_json = Get-NewCertificatePFXAsJson -Certificate $le_certificate
 Publish-OctopusCertificate -JsonBody $certificate_as_json
 
