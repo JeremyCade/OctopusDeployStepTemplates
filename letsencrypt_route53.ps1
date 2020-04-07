@@ -28,7 +28,7 @@ function Get-WebRequestErrorBody {
         $RequestError
     )
 
-    # Powershell < 6 you can read the Excepion
+    # Powershell < 6 you can read the Exception
     if ($PSVersionTable.PSVersion.Major -lt 6) {
         if ($RequestError.Exception.Response) {
             $reader = New-Object System.IO.StreamReader($RequestError.Exception.Response.GetResponseStream())
